@@ -12,3 +12,6 @@ build/
 *.kde
 *.elf
 *.kef
+
+dist/
+*.spec
