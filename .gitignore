@@ -1,0 +1,14 @@
+# Python geçici dosyaları ve cache'ler
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Geçici rapor ve log dosyaları
+diff.txt
+status.txt
+
+# Derleme çıktıları ve geçici klasörler
+build/
+*.kde
+*.elf
+*.kef
