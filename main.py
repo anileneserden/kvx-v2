@@ -7,10 +7,25 @@ import termios
 from create_projects.de import create_new_project
 from build_projects.de import build_de_project
 
+# Sürüm Bilgisi
+VERSION = "0.1.3"
+
 GREEN = "\033[92m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 RED = "\033[91m"
+CYAN = "\033[96m"
+
+def print_banner():
+    banner = f"""{CYAN}
+    _  __    _  __
+   | |/ /   | |/ /
+   | ' /    | ' / 
+   | . \    | . \ 
+   |_|\_\   |_|\_\  v{VERSION}
+{RESET}KuvixOS SDK & Build Management Tool
+"""
+    print(banner)
 
 def interactive_menu(title, options):
     current_idx = 0
@@ -24,9 +39,9 @@ def interactive_menu(title, options):
             output = ""
             for i, opt in enumerate(options):
                 if i == current_idx:
-                    output += f"{GREEN}{BOLD}> [x] {opt}{RESET}   "
+                    output += f"{GREEN}{BOLD}> [{opt}]{RESET}   "
                 else:
-                    output += f"  [ ] {opt}   "
+                    output += f"  [{opt}]   "
             sys.stdout.write(output)
             sys.stdout.flush()
             
@@ -46,10 +61,12 @@ def interactive_menu(title, options):
     return options[current_idx]
 
 def run_create_flow(target_name=None):
-    project_types = ["DE (Desktop Environment)"]
-    selected_type_label = interactive_menu("Proje Tipini Seçin:", project_types)
+    print_banner()
     
-    p_type = "de" if "DE" in selected_type_label else "de"
+    project_types = ["app-cli", "app-gui", "de"]
+    selected_type = interactive_menu("Proje Türünü Seçin:", project_types)
+    
+    p_type = selected_type
 
     print(f"{BOLD}Proje Detaylarını Girin:{RESET}")
     
@@ -71,20 +88,22 @@ def run_create_flow(target_name=None):
     if p_type == "de":
         create_new_project(".", name, version, author)
     else:
-        print(f"{RED}Hata: Bilinmeyen proje tipi!{RESET}")
+        print(f"{RED}Hata: '{p_type}' tipi için henüz proje şablonu tanımlanmadı!{RESET}")
 
 def main():
-    parser = argparse.ArgumentParser(description="KuvixOS V2 Geliştirme Aracı (DE)")
+    parser = argparse.ArgumentParser(description="KuvixOS V2 Geliştirme Aracı")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("init", help="Yeni bir DE projesini interaktif olarak başlatır")
+    subparsers.add_parser("init", help="Yeni bir projeyi interaktif olarak başlatır")
 
-    create_parser = subparsers.add_parser("create", help="Yeni bir DE projesi oluşturur")
+    create_parser = subparsers.add_parser("create", help="Yeni bir proje oluşturur")
     create_parser.add_argument("name", nargs="?", help="Proje adı")
 
-    build_parser = subparsers.add_parser("build", help="DE projesini derler")
+    build_parser = subparsers.add_parser("build", help="Projeyi derler")
     build_parser.add_argument("dir", nargs="?", default=".", help="Proje dizini")
     build_parser.add_argument("-c", "--clean", action="store_true", help="Derlemeden önce eski çıktıları temizler")
+
+    subparsers.add_parser("info", help="Araç ve SDK hakkında bilgi gösterir")
 
     args = parser.parse_args()
 
@@ -94,8 +113,7 @@ def main():
         target_dir = args.dir
         config_path = os.path.join(target_dir, "kvx.json")
         
-        # Proje tipini kvx.json üzerinden dinamik olarak okuyoruz
-        p_type = "de"  # Varsayılan
+        p_type = "de"
         if os.path.exists(config_path):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -113,18 +131,22 @@ def main():
             if os.path.exists(build_dir):
                 shutil.rmtree(build_dir)
             
-            # Proje tipine göre temizlenecek özel çıktı dosyaları
             if p_type == "de":
                 kde_file = os.path.join(target_dir, f"{project_name}.kde")
                 if os.path.exists(kde_file):
                     os.remove(kde_file)
             print(f"{GREEN}Temizlik tamamlandı.{RESET}")
 
-        # Proje tipine göre ilgili build modülünü tetikle
         if p_type == "de":
             build_de_project(target_dir, project_name)
         else:
             print(f"{RED}Hata: '{p_type}' tipindeki projeler için derleyici bulunamadı!{RESET}")
+            
+    elif args.command == "info":
+        print_banner()
+        print(f"{BOLD}KuvixOS Geliştirme Ortamı{RESET}")
+        print(f"Versiyon: {VERSION}")
+        print(f"SDK Yolu: {os.path.expanduser('~/.kuvix/sdk')}")
 
 if __name__ == "__main__":
     main()
