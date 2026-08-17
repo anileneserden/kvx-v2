@@ -4,11 +4,15 @@ import json
 import argparse
 import tty
 import termios
-from create_projects.de import create_new_project
+import shutil
+
+from create_projects.de import create_new_project as create_de_project
+from create_projects.app_gui import create_new_project as create_app_gui_project
 from build_projects.de import build_de_project
+from build_projects.app_gui import build_app_gui_project
 
 # Sürüm Bilgisi
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 
 GREEN = "\033[92m"
 BOLD = "\033[1m"
@@ -44,7 +48,7 @@ def interactive_menu(title, options):
                     output += f"  [{opt}]   "
             sys.stdout.write(output)
             sys.stdout.flush()
-            
+
             ch = sys.stdin.read(1)
             if ch == '\x1b':
                 sys.stdin.read(1)
@@ -62,31 +66,33 @@ def interactive_menu(title, options):
 
 def run_create_flow(target_name=None):
     print_banner()
-    
+
     project_types = ["app-cli", "app-gui", "de"]
     selected_type = interactive_menu("Proje Türünü Seçin:", project_types)
-    
+
     p_type = selected_type
 
     print(f"{BOLD}Proje Detaylarını Girin:{RESET}")
-    
+
     name = target_name
     if not name:
         name = input(f"{BOLD}? Proje Adı: {RESET}").strip()
     else:
         print(f"{BOLD}? Proje Adı: {RESET}{name}")
-    
+
     if not name:
         print(f"{RED}Hata: Proje adı boş olamaz.{RESET}")
         return
 
     version = input(f"{BOLD}? Sürüm (1.0.0): {RESET}").strip() or "1.0.0"
     author = input(f"{BOLD}? Geliştirici (Anıl Enes Erden): {RESET}").strip() or "Anıl Enes Erden"
-    
+
     print(f"\n{GREEN}Oluşturuluyor: {name} (Tip: {p_type}, Sürüm: {version}, Sahip: {author})...{RESET}")
-    
+
     if p_type == "de":
-        create_new_project(".", name, version, author)
+        create_de_project(".", name, version, author)
+    elif p_type == "app-gui":
+        create_app_gui_project(".", name, version, author)
     else:
         print(f"{RED}Hata: '{p_type}' tipi için henüz proje şablonu tanımlanmadı!{RESET}")
 
@@ -127,7 +133,6 @@ def main():
         if args.clean:
             print(f"{GREEN}Temizleniyor: {project_name}...{RESET}")
             build_dir = os.path.join(target_dir, "build")
-            import shutil
             if os.path.exists(build_dir):
                 shutil.rmtree(build_dir)
             
@@ -135,10 +140,16 @@ def main():
                 kde_file = os.path.join(target_dir, f"{project_name}.kde")
                 if os.path.exists(kde_file):
                     os.remove(kde_file)
+            elif p_type == "app-gui":
+                kef_file = os.path.join(target_dir, f"{project_name}.kef")
+                if os.path.exists(kef_file):
+                    os.remove(kef_file)
             print(f"{GREEN}Temizlik tamamlandı.{RESET}")
 
         if p_type == "de":
             build_de_project(target_dir, project_name)
+        elif p_type == "app-gui":
+            build_app_gui_project(target_dir, project_name)
         else:
             print(f"{RED}Hata: '{p_type}' tipindeki projeler için derleyici bulunamadı!{RESET}")
             
