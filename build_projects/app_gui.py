@@ -1,5 +1,6 @@
 import os
 import subprocess
+import json
 
 def build_app_gui_project(target_dir, project_name):
     print(f"Derleme başlatılıyor (app-gui: {project_name})...")
@@ -9,6 +10,7 @@ def build_app_gui_project(target_dir, project_name):
     
     main_obj = os.path.join(build_dir, "main.o")
     src_main = os.path.join(target_dir, "src", "main.cpp")
+    layout_path = os.path.join(target_dir, "layout.json")
     output_kef = os.path.join(target_dir, f"{project_name}.kef")
     
     cmd = [
@@ -20,11 +22,31 @@ def build_app_gui_project(target_dir, project_name):
     
     try:
         subprocess.run(cmd, check=True)
-        link_cmd = [
-            "i686-elf-ld", "-m", "elf_i386", "-r", main_obj, 
-            "-o", output_kef
-        ]
-        subprocess.run(link_cmd, check=True)
-        print(f"Başarılı: '{project_name}.kef' dosyası doğrudan oluşturuldu.")
+        
+        # 1. layout.json dosyasını oku
+        json_data = ""
+        if os.path.exists(layout_path):
+            with open(layout_path, "r", encoding="utf-8") as f:
+                json_data = f.read()
+                
+        # 2. Derlenen binary (ELF) verisini oku
+        with open(main_obj, "rb") as f:
+            binary_code = f.read()
+            
+        # 3. KEF formatında paketle (Magic Number + JSON Boyutu + JSON + Binary)
+        with open(output_kef, "wb") as f:
+            f.write(b"KEF1")
+            
+            json_bytes = json_data.encode("utf-8")
+            json_len = len(json_bytes)
+            
+            f.write(json_len.to_bytes(4, byteorder='little'))
+            f.write(json_bytes)
+            f.write(binary_code)
+            
+        print(f"Başarılı: '{project_name}.kef' paketi KEF1 formatında oluşturuldu.")
+        
     except subprocess.CalledProcessError:
         print("Hata: Derleme sırasında bir sorun oluştu.")
+    except Exception as e:
+        print(f"Hata: Paketleme sırasında sorun oluştu: {e}")

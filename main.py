@@ -12,7 +12,7 @@ from build_projects.de import build_de_project
 from build_projects.app_gui import build_app_gui_project
 
 # Sürüm Bilgisi
-VERSION = "0.1.4"
+VERSION = "0.1.5"
 
 GREEN = "\033[92m"
 BOLD = "\033[1m"
