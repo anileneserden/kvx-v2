@@ -12,13 +12,47 @@ from build_projects.de import build_de_project
 from build_projects.app_gui import build_app_gui_project
 
 # Sürüm Bilgisi
-VERSION = "0.1.5"
+VERSION = "0.1.6"
 
 GREEN = "\033[92m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 RED = "\033[91m"
 CYAN = "\033[96m"
+
+# Yapılandırma Sabitleri ve Yardımcı Fonksiyonlar
+CONFIG_DIR = os.path.expanduser("~/.kuvix")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
+
+DEFAULT_CONFIG = {
+    "default_editor": "none",
+    "sdk_path": os.path.expanduser("~/.kuvix/sdk")
+}
+
+def load_config():
+    if not os.path.exists(CONFIG_PATH):
+        ensure_config_dir()
+        save_config(DEFAULT_CONFIG)
+        return DEFAULT_CONFIG.copy()
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            # Varsayılan değerlerle eksik anahtarları tamamla
+            for k, v in DEFAULT_CONFIG.items():
+                if k not in data:
+                    data[k] = v
+            return data
+    except Exception:
+        return DEFAULT_CONFIG.copy()
+
+def save_config(config_data):
+    ensure_config_dir()
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config_data, f, indent=4, ensure_ascii=False)
+
+def ensure_config_dir():
+    if not os.path.exists(CONFIG_DIR):
+        os.makedirs(CONFIG_DIR, exist_ok=True)
 
 def print_banner():
     banner = f"""{CYAN}
@@ -109,12 +143,18 @@ def main():
     build_parser.add_argument("dir", nargs="?", default=".", help="Proje dizini")
     build_parser.add_argument("-c", "--clean", action="store_true", help="Derlemeden önce eski çıktıları temizler")
 
+    # Settings komutu
+    settings_parser = subparsers.add_parser("settings", help="SDK ve araç ayarlarını yapılandırır")
+    settings_parser.add_argument("--default-editor", choices=["vscode", "code", "none"], help="Varsayılan kod editörünü ayarlar")
+    settings_parser.add_argument("--sdk-path", help="KuvixOS SDK dizin yolunu ayarlar")
+
     subparsers.add_parser("info", help="Araç ve SDK hakkında bilgi gösterir")
 
     args = parser.parse_args()
 
-    if args.command == "init" or args.command == "create":
+    if args.command in ["init", "create"]:
         run_create_flow(args.name if args.command == "create" else None)
+    
     elif args.command == "build":
         target_dir = args.dir
         config_path = os.path.join(target_dir, "kvx.json")
@@ -152,12 +192,39 @@ def main():
             build_app_gui_project(target_dir, project_name)
         else:
             print(f"{RED}Hata: '{p_type}' tipindeki projeler için derleyici bulunamadı!{RESET}")
-            
+
+    elif args.command == "settings":
+        cfg = load_config()
+        updated = False
+
+        if args.default_editor:
+            # "code" ve "vscode" tercihlerini normalize edelim
+            val = "vscode" if args.default_editor in ["vscode", "code"] else "none"
+            cfg["default_editor"] = val
+            updated = True
+            print(f"{GREEN}Varsayılan editör ayarlandı: {val}{RESET}")
+
+        if args.sdk_path:
+            abs_path = os.path.abspath(os.path.expanduser(args.sdk_path))
+            cfg["sdk_path"] = abs_path
+            updated = True
+            print(f"{GREEN}SDK yolu ayarlandı: {abs_path}{RESET}")
+
+        if updated:
+            save_config(cfg)
+        else:
+            # Parametre verilmediyse mevcut ayarları yazdır
+            print(f"{BOLD}KuvixOS Ayarları ({CONFIG_PATH}):{RESET}")
+            print(f"  • Varsayılan Editör: {cfg.get('default_editor')}")
+            print(f"  • SDK Yolu        : {cfg.get('sdk_path')}")
+
     elif args.command == "info":
+        cfg = load_config()
         print_banner()
         print(f"{BOLD}KuvixOS Geliştirme Ortamı{RESET}")
-        print(f"Versiyon: {VERSION}")
-        print(f"SDK Yolu: {os.path.expanduser('~/.kuvix/sdk')}")
+        print(f"Versiyon         : {VERSION}")
+        print(f"SDK Yolu         : {cfg.get('sdk_path')}")
+        print(f"Varsayılan Editör: {cfg.get('default_editor')}")
 
 if __name__ == "__main__":
     main()
