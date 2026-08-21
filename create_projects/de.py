@@ -19,28 +19,44 @@ def create_new_project(path, name, version, author):
     os.makedirs(lib_dir, exist_ok=True)
     os.makedirs(vscode_dir, exist_ok=True)
 
-    # 1. .vscode/c_cpp_properties.json
-    c_cpp_properties_content = """{
-    "configurations": [
-        {
-            "name": "Linux",
-            "includePath": [
-                "${workspaceFolder}/**",
-                "${workspaceFolder}/include/**",
-                "${userHome}/.kuvix/sdk/include"
+    # 1. .vscode/c_cpp_properties.json (Konfigürasyona göre dinamik oluşturma)
+    config_path = os.path.expanduser("~/.kuvix/config.json")
+    editor_mode = "none"
+    sdk_path = os.path.expanduser("~/.kuvix/sdk")
+
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                editor_mode = cfg.get("default_editor", "none")
+                sdk_path = cfg.get("sdk_path", sdk_path)
+        except Exception:
+            pass
+
+    if editor_mode in ["vscode", "code"]:
+        c_cpp_properties_content = {
+            "configurations": [
+                {
+                    "name": "KuvixOS",
+                    "includePath": [
+                        "${workspaceFolder}/**",
+                        "${workspaceFolder}/include/**",
+                        f"{sdk_path}/include/**"
+                    ],
+                    "defines": [],
+                    "compilerPath": "/usr/bin/i686-elf-g++",
+                    "cStandard": "c17",
+                    "cppStandard": "c++17",
+                    "intelliSenseMode": "linux-gcc-x86"
+                }
             ],
-            "defines": [],
-            "compilerPath": "/usr/bin/clang",
-            "cStandard": "c17",
-            "cppStandard": "c++17",
-            "intelliSenseMode": "linux-clang-x64"
+            "version": 4
         }
-    ],
-    "version": 4
-}
-"""
-    with open(os.path.join(vscode_dir, "c_cpp_properties.json"), "w", encoding="utf-8") as f:
-        f.write(c_cpp_properties_content)
+        with open(os.path.join(vscode_dir, "c_cpp_properties.json"), "w", encoding="utf-8") as f:
+            json.dump(c_cpp_properties_content, f, indent=4, ensure_ascii=False)
+    else:
+        # Eğer editör ayarı "none" ise boş bırakabilir veya varsayılan bir şablon yazabilirsiniz
+        pass
 
     # 2. linker.ld
     linker_content = """ENTRY(_start)
