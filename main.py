@@ -8,11 +8,13 @@ import shutil
 
 from create_projects.de import create_new_project as create_de_project
 from create_projects.app_gui import create_new_project as create_app_gui_project
+from create_projects.login_screen import create_new_project as create_login_screen_project
 from build_projects.de import build_de_project
 from build_projects.app_gui import build_app_gui_project
+from build_projects.login_screen import build_login_screen_project
 
 # Sürüm Bilgisi
-VERSION = "0.1.6"
+VERSION = "0.1.7"
 
 GREEN = "\033[92m"
 BOLD = "\033[1m"
@@ -101,7 +103,7 @@ def interactive_menu(title, options):
 def run_create_flow(target_name=None):
     print_banner()
 
-    project_types = ["app-cli", "app-gui", "de"]
+    project_types = ["app-cli", "app-gui", "de", "login-screen"]
     selected_type = interactive_menu("Proje Türünü Seçin:", project_types)
 
     p_type = selected_type
@@ -127,6 +129,8 @@ def run_create_flow(target_name=None):
         create_de_project(".", name, version, author)
     elif p_type == "app-gui":
         create_app_gui_project(".", name, version, author)
+    elif p_type == "login-screen":
+        create_login_screen_project(".", name, version, author)
     else:
         print(f"{RED}Hata: '{p_type}' tipi için henüz proje şablonu tanımlanmadı!{RESET}")
 
@@ -184,12 +188,18 @@ def main():
                 kef_file = os.path.join(target_dir, f"{project_name}.kef")
                 if os.path.exists(kef_file):
                     os.remove(kef_file)
+            elif p_type == "login_screen":
+                kls_file = os.path.join(target_dir, f"{project_name}.kls")
+                if os.path.exists(kls_file):
+                    os.remove(kls_file)
             print(f"{GREEN}Temizlik tamamlandı.{RESET}")
 
         if p_type == "de":
             build_de_project(target_dir, project_name)
         elif p_type == "app-gui":
             build_app_gui_project(target_dir, project_name)
+        elif p_type == "login_screen":
+            build_login_screen_project(target_dir, project_name)
         else:
             print(f"{RED}Hata: '{p_type}' tipindeki projeler için derleyici bulunamadı!{RESET}")
 
