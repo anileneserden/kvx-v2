@@ -473,6 +473,7 @@ void cursor_render(DE_API* api, CursorState* state) {
             api->dmg_union_replace(state->old_x, state->old_y, state->old_x + state->width, state->old_y + state->height);
         }
 
+        // 3 parametreli orijinal imza kullanıldı (w ve h parametreleri kaldırıldı)
         api->render_kbi(mouse.x, mouse.y, state->path);
         api->dmg_union_replace(mouse.x, mouse.y, mouse.x + state->width, mouse.y + state->height);
 
@@ -537,10 +538,10 @@ extern "C" void app_main(DE_API* api) {
     int cell_size       = 100;
     bool show_grid = true;
 
-    Window win(100, 100, 800, 500, current_theme);
+    // Window win(100, 100, 800, 500, current_theme);
 
-    Label my_label(30, 40, 0x00E0E0E0, "Merhaba KuvixOS");
-    Button my_button(30, 80, 160, 45, 0x003D405B, 0x00FFFFFF, 4, "Tikla");
+    // Label my_label(30, 40, 0x00E0E0E0, "Merhaba KuvixOS");
+    //Button my_button(30, 80, 160, 45, 0x003D405B, 0x00FFFFFF, 4, "Tikla");
 
     de_mouse_state_t mouse = {0, 0, 0, 0, 0};
 
@@ -558,7 +559,7 @@ extern "C" void app_main(DE_API* api) {
 
         if (api->get_mouse) {
             api->get_mouse(&mouse);
-            win.update(mouse);
+            // win.update(mouse);
         }
 
         if (api->get_key) {
@@ -574,17 +575,17 @@ extern "C" void app_main(DE_API* api) {
             draw_grid_lines(api, 1920, 1080, cell_size, grid_color);
         }
 
-        if (win.is_open) {
-            win.draw(api);
-
-            my_label.x = win.x + 30;
-            my_label.y = win.y + 40;
-            my_label.draw(api);
-
-            my_button.x = win.x + 30;
-            my_button.y = win.y + 80;
-            my_button.draw(api);
-        }
+        //if (win.is_open) {
+        //    win.draw(api);
+        //
+        //    my_label.x = win.x + 30;
+        //    my_label.y = win.y + 40;
+        //    my_label.draw(api);
+        //
+        //    my_button.x = win.x + 30;
+        //    my_button.y = win.y + 80;
+        //    my_button.draw(api);
+        //}
 
         if (api->render_kbi) {
             api->render_kbi(mouse.x, mouse.y, "/sys/themes/arrow-cursor.kbi");

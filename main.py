@@ -14,7 +14,7 @@ from build_projects.app_gui import build_app_gui_project
 from build_projects.login_screen import build_login_screen_project
 
 # Sürüm Bilgisi
-VERSION = "0.1.7"
+VERSION = "0.1.8"
 
 GREEN = "\033[92m"
 BOLD = "\033[1m"
