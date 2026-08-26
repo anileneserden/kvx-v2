@@ -9,12 +9,15 @@ import shutil
 from create_projects.de import create_new_project as create_de_project
 from create_projects.app_gui import create_new_project as create_app_gui_project
 from create_projects.login_screen import create_new_project as create_login_screen_project
+from create_projects.driver import create_new_project as create_driver_project
+
 from build_projects.de import build_de_project
 from build_projects.app_gui import build_app_gui_project
 from build_projects.login_screen import build_login_screen_project
+from build_projects.driver import build_driver_project
 
 # Sürüm Bilgisi
-VERSION = "0.1.8"
+VERSION = "0.1.9"
 
 GREEN = "\033[92m"
 BOLD = "\033[1m"
@@ -103,7 +106,7 @@ def interactive_menu(title, options):
 def run_create_flow(target_name=None):
     print_banner()
 
-    project_types = ["app-cli", "app-gui", "de", "login-screen"]
+    project_types = ["app-cli", "app-gui", "de", "login-screen", "driver"]
     selected_type = interactive_menu("Proje Türünü Seçin:", project_types)
 
     p_type = selected_type
@@ -131,6 +134,8 @@ def run_create_flow(target_name=None):
         create_app_gui_project(".", name, version, author)
     elif p_type == "login-screen":
         create_login_screen_project(".", name, version, author)
+    elif p_type == "driver":
+        create_driver_project(".", name, version, author)
     else:
         print(f"{RED}Hata: '{p_type}' tipi için henüz proje şablonu tanımlanmadı!{RESET}")
 
@@ -148,7 +153,7 @@ def main():
     build_parser.add_argument("-c", "--clean", action="store_true", help="Derlemeden önce eski çıktıları temizler")
 
     # Settings komutu
-    settings_parser = subparsers.add_parser("settings", help="SDK ve araç ayarlarını yapılandırır")
+    settings_parser = subparsers.add_parser("settings", help="SDK and araç ayarlarını yapılandırır")
     settings_parser.add_argument("--default-editor", choices=["vscode", "code", "none"], help="Varsayılan kod editörünü ayarlar")
     settings_parser.add_argument("--sdk-path", help="KuvixOS SDK dizin yolunu ayarlar")
 
@@ -192,6 +197,10 @@ def main():
                 kls_file = os.path.join(target_dir, f"{project_name}.kls")
                 if os.path.exists(kls_file):
                     os.remove(kls_file)
+            elif p_type == "driver":
+                kdf_file = os.path.join(target_dir, f"{project_name}.kdf")
+                if os.path.exists(kdf_file):
+                    os.remove(kdf_file)
             print(f"{GREEN}Temizlik tamamlandı.{RESET}")
 
         if p_type == "de":
@@ -200,6 +209,8 @@ def main():
             build_app_gui_project(target_dir, project_name)
         elif p_type == "login_screen":
             build_login_screen_project(target_dir, project_name)
+        elif p_type == "driver":
+            build_driver_project(target_dir, project_name)
         else:
             print(f"{RED}Hata: '{p_type}' tipindeki projeler için derleyici bulunamadı!{RESET}")
 
@@ -208,7 +219,6 @@ def main():
         updated = False
 
         if args.default_editor:
-            # "code" ve "vscode" tercihlerini normalize edelim
             val = "vscode" if args.default_editor in ["vscode", "code"] else "none"
             cfg["default_editor"] = val
             updated = True
@@ -223,7 +233,6 @@ def main():
         if updated:
             save_config(cfg)
         else:
-            # Parametre verilmediyse mevcut ayarları yazdır
             print(f"{BOLD}KuvixOS Ayarları ({CONFIG_PATH}):{RESET}")
             print(f"  • Varsayılan Editör: {cfg.get('default_editor')}")
             print(f"  • SDK Yolu        : {cfg.get('sdk_path')}")
