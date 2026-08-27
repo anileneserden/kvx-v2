@@ -1,60 +1,78 @@
 import os
 import subprocess
+import glob
+import json
 
-def build_driver_project(project_path, name, target_arch="i686", custom_cflags="", custom_ldflags="", run_make=True):
-    target_dir = os.path.abspath(project_path)
+def build_driver_project(path, *args, **kwargs):
+    # Proje adını dizin adından veya kvx.json'dan dinamik olarak alalım
+    project_name = os.path.basename(os.path.abspath(path))
+    kvx_json_path = os.path.join(path, "kvx.json")
     
-    if not os.path.exists(target_dir):
-        print(f"Hata: '{target_dir}' dizini bulunamadı!")
+    if os.path.exists(kvx_json_path):
+        try:
+            with open(kvx_json_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                project_name = cfg.get("name", project_name)
+        except Exception:
+            pass
+
+    print(f"Derleme başlatılıyor ({project_name} - Sürücü)...")
+    
+    src_dir = os.path.join(path, "src")
+    build_dir = os.path.join(path, "build")
+    os.makedirs(build_dir, exist_ok=True)
+    
+    # Tüm .c dosyalarını bul
+    c_files = glob.glob(os.path.join(src_dir, "**/*.c"), recursive=True)
+    if not c_files:
+        print("Hata: Derlenecek .c dosyası bulunamadı!")
         return False
-
-    # Sürücüler için varsayılan linker bayrakları (konumdan bağımsız binary çıktı için)
-    ldflags = custom_ldflags if custom_ldflags else "-m elf_i386 -nostdlib -T linker.ld"
+        
+    sdk_inc = os.path.expanduser("~/.kuvix/sdk/include")
+    obj_files = []
     
-    makefile_content = f"""TARGET = {name}.kdf
-KUVIX_SDK_INC = $(HOME)/.kuvix/sdk/include
-CXX = i686-elf-g++
-LD = i686-elf-ld
-
-CXXFLAGS = -m32 -march={target_arch} -c -ffreestanding -fno-pic -fno-pie -mno-sse -mno-mmx -mno-80387 \\
-           -fno-stack-protector -fno-builtin -fno-asynchronous-unwind-tables \\
-           -ffunction-sections -fdata-sections -I$(KUVIX_SDK_INC) \\
-           -fno-rtti -fno-exceptions -O2 -Wall -Wextra {custom_cflags}
-
-LDFLAGS = {ldflags}
-
-CPP_SRCS = $(shell find src -type f -name '*.cpp' 2>/dev/null)
-CPP_OBJS = $(patsubst src/%.cpp, build/%.o, $(CPP_SRCS))
-
-OBJS = $(CPP_OBJS)
-
-.PHONY: all clean
-
-all: $(TARGET)
-
-$(TARGET): $(OBJS)
-\t$(LD) $(LDFLAGS) $(OBJS) -o $(TARGET)
-
-build/%.o: src/%.cpp
-\t@mkdir -p $(dir $@)
-\t$(CXX) $(CXXFLAGS) $< -o $@
-
-clean:
-\trm -rf build {name}.kdf
-"""
-
-    makefile_path = os.path.join(target_dir, "Makefile")
-    with open(makefile_path, "w", encoding="utf-8") as f:
-        f.write(makefile_content)
-
-    print(f"Başarılı: '{name}' sürücüsü için Makefile oluşturuldu.")
-
-    if run_make:
-        print(f"Derleme başlatılıyor ({name} - Sürücü)...")
-        result = subprocess.run(["make"], cwd=target_dir)
-        if result.returncode != 0:
-            print("Hata: Sürücü derlemesi başarısız oldu!")
+    # 1. Her bir .c dosyasını .o nesne dosyasına derle
+    for c_file in c_files:
+        rel_path = os.path.relpath(c_file, src_dir)
+        obj_file = os.path.join(build_dir, rel_path.replace(".c", ".o"))
+        os.makedirs(os.path.dirname(obj_file), exist_ok=True)
+        
+        gcc_cmd = [
+            "i686-elf-gcc",
+            "-m32", "-march=i686", "-c",
+            "-ffreestanding", "-fno-pic", "-fno-pie",
+            "-mno-sse", "-mno-mmx", "-mno-80387",
+            "-fno-stack-protector", "-fno-builtin",
+            "-fno-asynchronous-unwind-tables",
+            "-ffunction-sections", "-fdata-sections",
+            f"-I{sdk_inc}",
+            "-O2", "-Wall", "-Wextra",
+            c_file, "-o", obj_file
+        ]
+        
+        res = subprocess.run(gcc_cmd)
+        if res.returncode != 0:
+            print(f"Hata: '{c_file}' derlenirken başarısız oldu!")
             return False
-        print(f"Başarılı: '{name}.kdf' başarıyla derlendi.")
-
+            
+        obj_files.append(obj_file)
+        
+    # 2. Linker ile dinamik isimli .kdf çıktısını oluştur (örn: e1000.kdf)
+    target = os.path.join(path, f"{project_name}.kdf")
+    ld_script = os.path.join(path, "linker.ld")
+    
+    ld_cmd = [
+        "i686-elf-ld",
+        "-m", "elf_i386",
+        "-nostdlib",
+        "-T", ld_script,
+        "-o", target
+    ] + obj_files
+    
+    res = subprocess.run(ld_cmd)
+    if res.returncode != 0:
+        print("Hata: Sürücü linkleme (bağlama) başarısız oldu!")
+        return False
+        
+    print(f"Başarılı: Sürücü başarıyla derlendi -> {target}")
     return True

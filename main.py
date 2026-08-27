@@ -17,7 +17,7 @@ from build_projects.login_screen import build_login_screen_project
 from build_projects.driver import build_driver_project
 
 # Sürüm Bilgisi
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 GREEN = "\033[92m"
 BOLD = "\033[1m"
@@ -184,6 +184,11 @@ def main():
             build_dir = os.path.join(target_dir, "build")
             if os.path.exists(build_dir):
                 shutil.rmtree(build_dir)
+            
+            # Eski Makefile kalıntısını her koşulda temizle
+            makefile_path = os.path.join(target_dir, "Makefile")
+            if os.path.exists(makefile_path):
+                os.remove(makefile_path)
             
             if p_type == "de":
                 kde_file = os.path.join(target_dir, f"{project_name}.kde")
