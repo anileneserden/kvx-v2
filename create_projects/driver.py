@@ -77,34 +77,9 @@ SECTIONS
     with open(os.path.join(target_dir, "linker.ld"), "w", encoding="utf-8") as f:
         f.write(linker_content)
 
-    # 3. src/main.cpp (KDF yapıları ve sürücü kodunu tek dosyada barındırır)
+    # 3. src/main.c (kernel/kdf.h üzerinden ortak struct yapılarını kullanır)
     main_c_code = """#include <stdint.h>
-
-#define KDF_MAGIC 0x46444B4B 
-
-// Sürücüye teslim edilecek canlı kernel servisleri
-typedef struct {
-    void (*printk)(const char* fmt, ...);
-    uint8_t (*inb)(uint16_t port);
-    void (*outb)(uint16_t port, uint8_t data);
-    void (*register_interrupt)(int irq, void (*handler)(void));
-} KernelAPI;
-
-// JENERİK SÜRÜCÜ OPERASYONLARI
-typedef struct {
-    int (*read)(void* buffer, uint32_t size);
-    int (*write)(const void* buffer, uint32_t size);
-    int (*control)(const char* command, void* arg, uint32_t arg_size);
-} KDF_Operations;
-
-typedef struct {
-    uint32_t magic;           
-    uint32_t driver_version;  
-    char     driver_name[32]; 
-    uint32_t init_offset;     
-    uint32_t exit_offset;     
-    uint32_t code_size;       
-} __attribute__((packed)) KDF_Header;
+#include <kernel/kdf.h>
 
 // Kernel servislerine referans
 static KernelAPI* g_kapi = 0;
@@ -129,7 +104,7 @@ static int my_driver_control(const char* command, void* arg, uint32_t arg_size) 
 }
 
 // Sürücü Giriş Noktası
-extern "C" int driver_init(KernelAPI* kapi, KDF_Operations* ops) {
+int driver_init(KernelAPI* kapi, KDF_Operations* ops) {
     g_kapi = kapi;
 
     if (g_kapi && g_kapi->printk) {
@@ -146,13 +121,13 @@ extern "C" int driver_init(KernelAPI* kapi, KDF_Operations* ops) {
 }
 
 // Sürücü Çıkış Noktası
-extern "C" void driver_exit(void) {
+void driver_exit(void) {
     if (g_kapi && g_kapi->printk) {
         g_kapi->printk("[KDF] Ornek surucu kaldiriliyor...\\n");
     }
 }
 """
-    with open(os.path.join(src_dir, "main.cpp"), "w", encoding="utf-8") as f:
+    with open(os.path.join(src_dir, "main.c"), "w", encoding="utf-8") as f:
         f.write(main_c_code)
 
     # 4. kvx.json Manifest
@@ -168,5 +143,5 @@ extern "C" void driver_exit(void) {
     with open(os.path.join(target_dir, "kvx.json"), "w", encoding="utf-8") as f:
         json.dump(kvx_json_data, f, indent=4, ensure_ascii=False)
 
-    print(f"Başarılı: '{name}' KDF sürücü projesi (include klasörsüz) başarıyla oluşturuldu.")
+    print(f"Başarılı: '{name}' KDF sürücü projesi başarıyla oluşturuldu.")
     return True

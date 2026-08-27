@@ -17,7 +17,7 @@ from build_projects.login_screen import build_login_screen_project
 from build_projects.driver import build_driver_project
 
 # Sürüm Bilgisi
-VERSION = "0.1.9"
+VERSION = "0.2.0"
 
 GREEN = "\033[92m"
 BOLD = "\033[1m"
