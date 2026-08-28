@@ -10,14 +10,16 @@ from create_projects.de import create_new_project as create_de_project
 from create_projects.app_gui import create_new_project as create_app_gui_project
 from create_projects.login_screen import create_new_project as create_login_screen_project
 from create_projects.driver import create_new_project as create_driver_project
+from create_projects.command import create_new_project as create_command_project
 
 from build_projects.de import build_de_project
 from build_projects.app_gui import build_app_gui_project
 from build_projects.login_screen import build_login_screen_project
 from build_projects.driver import build_driver_project
+from build_projects.command import build_command_project
 
 # Sürüm Bilgisi
-VERSION = "0.2.1"
+VERSION = "0.2.2"
 
 GREEN = "\033[92m"
 BOLD = "\033[1m"
@@ -106,7 +108,8 @@ def interactive_menu(title, options):
 def run_create_flow(target_name=None):
     print_banner()
 
-    project_types = ["app-cli", "app-gui", "de", "login-screen", "driver"]
+    # 'command' türünü listeye ekliyoruz
+    project_types = ["app-cli", "app-gui", "de", "login-screen", "driver", "command"]
     selected_type = interactive_menu("Proje Türünü Seçin:", project_types)
 
     p_type = selected_type
@@ -136,6 +139,8 @@ def run_create_flow(target_name=None):
         create_login_screen_project(".", name, version, author)
     elif p_type == "driver":
         create_driver_project(".", name, version, author)
+    elif p_type == "command": # Command projesi tetikleyicisi
+        create_command_project(".", name, version, author)
     else:
         print(f"{RED}Hata: '{p_type}' tipi için henüz proje şablonu tanımlanmadı!{RESET}")
 
@@ -206,6 +211,10 @@ def main():
                 kdf_file = os.path.join(target_dir, f"{project_name}.kdf")
                 if os.path.exists(kdf_file):
                     os.remove(kdf_file)
+            elif p_type == "command":
+                cmd_file = os.path.join(target_dir, f"{project_name}")
+                if os.path.exists(cmd_file):
+                    os.remove(cmd_file)
             print(f"{GREEN}Temizlik tamamlandı.{RESET}")
 
         if p_type == "de":
@@ -216,6 +225,8 @@ def main():
             build_login_screen_project(target_dir, project_name)
         elif p_type == "driver":
             build_driver_project(target_dir, project_name)
+        elif p_type == "command":
+            build_command_project(target_dir, project_name)
         else:
             print(f"{RED}Hata: '{p_type}' tipindeki projeler için derleyici bulunamadı!{RESET}")
 
