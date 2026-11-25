@@ -1,16 +1,33 @@
+import json
 import os
 import subprocess
 
+
+def resolve_project_name(target_dir, fallback_name):
+    kvx_json_path = os.path.join(target_dir, "kvx.json")
+    if os.path.isfile(kvx_json_path):
+        try:
+            with open(kvx_json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            json_name = data.get("name")
+            if isinstance(json_name, str) and json_name.strip():
+                return json_name.strip()
+        except Exception as e:
+            print(f"Uyarı: kvx.json okunamadı ({e}), verilen isim kullanılacak.")
+    return fallback_name.strip()
+
+
 def build_de_project(project_path, name, target_arch="i686", custom_cflags="", custom_ldflags="", run_make=True):
     target_dir = os.path.abspath(project_path)
-    
+
     if not os.path.exists(target_dir):
         print(f"Hata: '{target_dir}' dizini bulunamadı!")
         return False
 
+    resolved_name = resolve_project_name(target_dir, name)
     ldflags = custom_ldflags if custom_ldflags else "-m elf_i386 -T linker.ld --gc-sections -e _start -s"
-    
-    makefile_content = f"""TARGET = {name}.kde
+
+    makefile_content = f"""TARGET = {resolved_name}.kde
 KUVIX_SDK_INC = $(HOME)/.kuvix/sdk/include
 AS = i686-elf-as
 CXX = i686-elf-g++
@@ -45,21 +62,21 @@ build/%.o: src/%.cpp
 \t$(CXX) $(CXXFLAGS) $< -o $@
 
 clean:
-\trm -rf build {name}.kde
+\trm -rf build $(TARGET)
 """
 
     makefile_path = os.path.join(target_dir, "Makefile")
     with open(makefile_path, "w", encoding="utf-8") as f:
         f.write(makefile_content)
 
-    print(f"Başarılı: '{name}' için Makefile oluşturuldu.")
+    print(f"Başarılı: '{resolved_name}' için Makefile oluşturuldu.")
 
     if run_make:
-        print(f"Derleme başlatılıyor ({name})...")
+        print(f"Derleme başlatılıyor ({resolved_name})...")
         result = subprocess.run(["make"], cwd=target_dir)
         if result.returncode != 0:
             print("Hata: Derleme başarısız oldu!")
             return False
-        print(f"Başarılı: '{name}.kde' başarıyla derlendi.")
+        print(f"Başarılı: '{resolved_name}.kde' başarıyla derlendi.")
 
     return True
