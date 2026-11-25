@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import tempfile
 
 
 def resolve_project_name(target_dir, fallback_name):
@@ -30,21 +31,20 @@ def build_de_project(project_path, name, target_arch="i686", custom_cflags="", c
     makefile_content = f"""TARGET = {resolved_name}.kde
 KUVIX_SDK_INC = $(HOME)/.kuvix/sdk/include
 AS = i686-elf-as
-CXX = i686-elf-g++
+CC = i686-elf-gcc
 LD = i686-elf-ld
 
-CXXFLAGS = -m32 -Wa,--32 -march={target_arch} -c -ffreestanding -fno-pic -fno-pie -mno-sse -mno-mmx -mno-80387 \\
-           -fno-stack-protector -fno-builtin -fno-asynchronous-unwind-tables \\
-           -ffunction-sections -fdata-sections -Iinclude -I$(KUVIX_SDK_INC) \\
-           -fno-rtti -fno-exceptions {custom_cflags}
+CFLAGS = -m32 -Wa,--32 -march={target_arch} -std=gnu11 -c -ffreestanding -fno-pic -fno-pie -mno-sse -mno-mmx -mno-80387 \\
+         -fno-stack-protector -fno-builtin -fno-asynchronous-unwind-tables \\
+         -ffunction-sections -fdata-sections -Wall -Wextra -Iinclude -I$(KUVIX_SDK_INC) {custom_cflags}
 
 LDFLAGS = {ldflags}
 
-CPP_SRCS = $(shell find src -type f -name '*.cpp' 2>/dev/null)
-CPP_OBJS = $(patsubst src/%.cpp, build/%.o, $(CPP_SRCS))
+C_SRCS = $(shell find src -type f -name '*.c' 2>/dev/null)
+C_OBJS = $(patsubst src/%.c, build/%.o, $(C_SRCS))
 
 ENTRY_OBJ = build/runtime/entry.o
-OBJS = $(ENTRY_OBJ) $(filter-out $(ENTRY_OBJ), $(CPP_OBJS))
+OBJS = $(ENTRY_OBJ) $(filter-out $(ENTRY_OBJ), $(C_OBJS))
 
 .PHONY: all clean
 
@@ -57,26 +57,32 @@ build/runtime/entry.o: src/runtime/entry.s
 \t@mkdir -p $(dir $@)
 \t$(AS) --32 $< -o $@
 
-build/%.o: src/%.cpp
+build/%.o: src/%.c
 \t@mkdir -p $(dir $@)
-\t$(CXX) $(CXXFLAGS) $< -o $@
+\t$(CC) $(CFLAGS) $< -o $@
 
 clean:
 \trm -rf build $(TARGET)
 """
 
-    makefile_path = os.path.join(target_dir, "Makefile")
-    with open(makefile_path, "w", encoding="utf-8") as f:
-        f.write(makefile_content)
+    fd, makefile_path = tempfile.mkstemp(prefix=f"Makefile_{resolved_name}_", suffix=".mk", dir="/tmp")
+    os.close(fd)
 
-    print(f"Başarılı: '{resolved_name}' için Makefile oluşturuldu.")
+    try:
+        with open(makefile_path, "w", encoding="utf-8") as f:
+            f.write(makefile_content)
 
-    if run_make:
-        print(f"Derleme başlatılıyor ({resolved_name})...")
-        result = subprocess.run(["make"], cwd=target_dir)
-        if result.returncode != 0:
-            print("Hata: Derleme başarısız oldu!")
-            return False
-        print(f"Başarılı: '{resolved_name}.kde' başarıyla derlendi.")
+        print(f"Başarılı: '{resolved_name}' için geçici Makefile '/tmp' dizininde oluşturuldu ({makefile_path}).")
 
-    return True
+        if run_make:
+            print(f"Derleme başlatılıyor ({resolved_name})...")
+            result = subprocess.run(["make", "-f", makefile_path], cwd=target_dir)
+            if result.returncode != 0:
+                print("Hata: Derleme başarısız oldu!")
+                return False
+            print(f"Başarılı: '{resolved_name}.kde' başarıyla derlendi.")
+
+        return True
+    finally:
+        if run_make and os.path.exists(makefile_path):
+            os.remove(makefile_path)

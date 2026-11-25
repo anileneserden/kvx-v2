@@ -1,6 +1,7 @@
 import os
 import json
 
+
 def create_new_project(path, name, version, author):
     target_dir = os.path.abspath(os.path.join(path, name))
 
@@ -19,7 +20,7 @@ def create_new_project(path, name, version, author):
     os.makedirs(lib_dir, exist_ok=True)
     os.makedirs(vscode_dir, exist_ok=True)
 
-    # 1. .vscode/c_cpp_properties.json (Konfigürasyona göre dinamik oluşturma)
+    # 1. .vscode/c_cpp_properties.json
     config_path = os.path.expanduser("~/.kuvix/config.json")
     editor_mode = "none"
     sdk_path = os.path.expanduser("~/.kuvix/sdk")
@@ -44,9 +45,8 @@ def create_new_project(path, name, version, author):
                         f"{sdk_path}/include/**"
                     ],
                     "defines": [],
-                    "compilerPath": "/usr/bin/i686-elf-g++",
-                    "cStandard": "c17",
-                    "cppStandard": "c++17",
+                    "compilerPath": "/usr/bin/i686-elf-gcc",
+                    "cStandard": "gnu11",
                     "intelliSenseMode": "linux-gcc-x86"
                 }
             ],
@@ -54,16 +54,13 @@ def create_new_project(path, name, version, author):
         }
         with open(os.path.join(vscode_dir, "c_cpp_properties.json"), "w", encoding="utf-8") as f:
             json.dump(c_cpp_properties_content, f, indent=4, ensure_ascii=False)
-    else:
-        # Eğer editör ayarı "none" ise boş bırakabilir veya varsayılan bir şablon yazabilirsiniz
-        pass
 
     # 2. linker.ld
     linker_content = """ENTRY(_start)
 
 SECTIONS
 {
-    . = 0x3000000; /* 48 MB adresi (Kernel Heap'in üstünde, RAM sınırları içinde) */
+    . = 0x3000000;
 
     .text : {
         *(.text._start)
@@ -86,18 +83,16 @@ SECTIONS
     with open(os.path.join(target_dir, "linker.ld"), "w", encoding="utf-8") as f:
         f.write(linker_content)
 
-    # 3. entry.s
+    # 3. src/runtime/entry.s
     entry_s_code = """.global _start
 .extern app_main
 
 .section .text._start
 _start:
-    # cdecl: Loader 'call' ile çağırdıysa [esp + 4] konumundaki DE_API* pointer'ını aktar
     pushl 4(%esp)
     call app_main
     addl $4, %esp
 
-    # app_main geri dönerse işlemciyi güvenli döngüye al (Triple Fault'u önler)
 .loop:
     cli
     hlt
@@ -106,35 +101,16 @@ _start:
     with open(os.path.join(runtime_dir, "entry.s"), "w", encoding="utf-8") as f:
         f.write(entry_s_code)
 
-    # 4. Runtime.cpp
-    runtime_code = """#include <stdint.h>
-#include <stddef.h>
-
-extern "C" {
-    void __cxa_pure_virtual() { while (1) { asm volatile("hlt"); } }
-    int __cxa_atexit(void (*destructor)(void *), void *arg, void *dso_handle) {
-        (void)destructor; (void)arg; (void)dso_handle;
-        return 0;
-    }
-    void* __dso_handle = 0;
-}
-
-void operator delete(void*, size_t) noexcept {}
-void operator delete(void*) noexcept {}
-"""
-    with open(os.path.join(runtime_dir, "Runtime.cpp"), "w", encoding="utf-8") as f:
-        f.write(runtime_code)
-
-    # 5. include/draw_text.hpp
-    hpp_draw_code = r"""#ifndef DRAW_TEXT_HPP
-#define DRAW_TEXT_HPP
+    # 4. include/draw_text.h
+    h_draw_code = r"""#ifndef DRAW_TEXT_H
+#define DRAW_TEXT_H
 
 #include <kernel/drivers/video/de_api.h>
 #include <stdint.h>
 
 #define AUTO_STR(str_val) ({ \
     const char* __ptr; \
-    asm volatile ( \
+    __asm__ __volatile__ ( \
         "call 1f\n\t" \
         ".asciz \"" str_val "\"\n\t" \
         "1:\n\t" \
@@ -151,17 +127,18 @@ void draw_text_safe_internal(DE_API* api, int x, int y, const char* str, uint32_
 
 #endif
 """
-    with open(os.path.join(include_dir, "draw_text.hpp"), "w", encoding="utf-8") as f:
-        f.write(hpp_draw_code)
+    with open(os.path.join(include_dir, "draw_text.h"), "w", encoding="utf-8") as f:
+        f.write(h_draw_code)
 
-    # 6. include/input.h
-    hpp_input_code = """#ifndef INPUT_H
+    # 5. include/input.h
+    h_input_code = """#ifndef INPUT_H
 #define INPUT_H
 
 #include <kernel/drivers/video/de_api.h>
 #include <stdint.h>
+#include <stdbool.h>
 
-enum KeyCode : uint8_t {
+typedef enum {
     KEY_NONE      = 0x00,
     KEY_ENTER     = 0x0D,
     KEY_ESCAPE    = 0x1B,
@@ -171,38 +148,32 @@ enum KeyCode : uint8_t {
     KEY_RSHIFT    = 0x36,
     KEY_LALT      = 0x38,
     KEY_SUPER     = 0x5B
-};
+} KeyCode;
 
-enum KeyModifier : uint8_t {
+typedef enum {
     MOD_NONE  = 0,
     MOD_SHIFT = 1 << 0,
     MOD_CTRL  = 1 << 1,
     MOD_ALT   = 1 << 2,
     MOD_SUPER = 1 << 3
-};
+} KeyModifier;
 
-class Input {
-private:
-    static uint8_t modifiers;
-    static bool keys[256];
-
-public:
-    static void poll(DE_API* api);
-    static bool is_key_down(uint8_t key);
-    static bool is_ctrl();
-    static bool is_shift();
-    static bool is_alt();
-    static bool is_super();
-    static bool is_combo(uint8_t modifier_flags, uint8_t key);
-};
+void input_init(void);
+void input_poll(DE_API* api);
+bool input_is_key_down(uint8_t key);
+bool input_is_ctrl(void);
+bool input_is_shift(void);
+bool input_is_alt(void);
+bool input_is_super(void);
+bool input_is_combo(uint8_t modifier_flags, uint8_t key);
 
 #endif
 """
     with open(os.path.join(include_dir, "input.h"), "w", encoding="utf-8") as f:
-        f.write(hpp_input_code)
+        f.write(h_input_code)
 
-    # 7. include/cursor.h
-    hpp_cursor_code = """#ifndef LIB_CURSOR_H
+    # 6. include/cursor.h
+    h_cursor_code = """#ifndef LIB_CURSOR_H
 #define LIB_CURSOR_H
 
 #include <kernel/drivers/video/de_api.h>
@@ -223,157 +194,94 @@ void cursor_render(DE_API* api, CursorState* state);
 #endif
 """
     with open(os.path.join(include_dir, "cursor.h"), "w", encoding="utf-8") as f:
-        f.write(hpp_cursor_code)
+        f.write(h_cursor_code)
 
-    # 8. include/window.hpp
-    hpp_window_code = """#ifndef WINDOW_HPP
-#define WINDOW_HPP
+    # 7. include/window.h
+    h_window_code = """#ifndef WINDOW_H
+#define WINDOW_H
 
 #include <kernel/drivers/video/de_api.h>
 #include <stdint.h>
 
-struct WindowTheme {
+typedef struct {
     uint32_t bg_color;
     uint32_t header_color;
     uint32_t active_header_color;
     uint32_t border_color;
     int border_thickness;
     int header_height;
-};
+} WindowTheme;
 
-class Window {
-public:
-    int x, y;
-    int width, height;
+typedef struct {
+    int x;
+    int y;
+    int width;
+    int height;
     int dragging;
-    int drag_offset_x, drag_offset_y;
+    int drag_offset_x;
+    int drag_offset_y;
     int is_open;
-
     WindowTheme theme;
+} Window;
 
-    Window(int wx, int wy, int ww, int wh, WindowTheme custom_theme)  
-        : x(wx), y(wy), width(ww), height(wh),  
-          dragging(0), drag_offset_x(0), drag_offset_y(0), is_open(1),
-          theme(custom_theme) {}
-
-    void update(const de_mouse_state_t& mouse) {
-        if (!is_open) return;
-
-        if (mouse.left_button == 1) {
-            if (dragging == 0) {
-                if (mouse.x >= x && mouse.x <= (x + width) &&
-                    mouse.y >= y && mouse.y <= (y + theme.header_height)) {
-                    
-                    int close_x = x + width - theme.header_height;
-                    if (mouse.x >= close_x && mouse.x <= (x + width)) {
-                        is_open = 0;
-                        return;
-                    }
-
-                    dragging = 1;
-                    drag_offset_x = mouse.x - x;
-                    drag_offset_y = mouse.y - y;
-                }
-            } else {
-                int new_x = mouse.x - drag_offset_x;
-                int new_y = mouse.y - drag_offset_y;
-
-                if (new_x < 0) new_x = 0;
-                if (new_y < 0) new_y = 0;
-                if (new_x > 1920 - width) new_x = 1920 - width;
-                if (new_y > 1080 - height) new_y = 1080 - height;
-
-                x = new_x;
-                y = new_y;
-            }
-        } else {
-            dragging = 0;
-        }
-    }
-
-    void draw(DE_API* api) {
-        if (!is_open || !api || !api->draw_rect) return;
-
-        int t = theme.border_thickness;
-        api->draw_rect(x - t, y - t, width + (t * 2), height + (t * 2), theme.border_color);
-        api->draw_rect(x, y, width, height, theme.bg_color);
-
-        uint32_t current_header = (dragging == 1) ? theme.active_header_color : theme.header_color;
-        api->draw_rect(x, y, width, theme.header_height, current_header);
-
-        int btn_size = 14;
-        int btn_x = x + width - theme.header_height + (theme.header_height - btn_size) / 2;
-        int btn_y = y + (theme.header_height - btn_size) / 2;
-        api->draw_rect(btn_x, btn_y, btn_size, btn_size, 0x00E63946);
-    }
-};
-
-#endif // WINDOW_HPP
-"""
-    with open(os.path.join(include_dir, "window.hpp"), "w", encoding="utf-8") as f:
-        f.write(hpp_window_code)
-
-    # 9. include/grid.hpp
-    hpp_grid_code = """#ifndef GRID_HPP
-#define GRID_HPP
-
-#include <kernel/drivers/video/de_api.h>
-#include <stdint.h>
-
-void draw_grid_lines(DE_API* api, uint32_t screen_width, uint32_t screen_height, int cell_size, uint32_t grid_color);
+void window_init(Window* win, int wx, int wy, int ww, int wh, WindowTheme custom_theme);
+void window_update(Window* win, const de_mouse_state_t* mouse);
+void window_draw(const Window* win, DE_API* api);
 
 #endif
 """
-    with open(os.path.join(include_dir, "grid.hpp"), "w", encoding="utf-8") as f:
-        f.write(hpp_grid_code)
+    with open(os.path.join(include_dir, "window.h"), "w", encoding="utf-8") as f:
+        f.write(h_window_code)
 
-    # 10. include/widget.hpp
-    hpp_widget_code = """#ifndef WIDGET_HPP
-#define WIDGET_HPP
+    # 8. include/grid.h
+    h_grid_code = """#ifndef GRID_H
+#define GRID_H
 
 #include <kernel/drivers/video/de_api.h>
 #include <stdint.h>
 
-enum WidgetType {
+void draw_grid_lines(DE_API* api, int screen_width, int screen_height, int cell_size, uint32_t grid_color);
+
+#endif
+"""
+    with open(os.path.join(include_dir, "grid.h"), "w", encoding="utf-8") as f:
+        f.write(h_grid_code)
+
+    # 9. include/widget.h
+    h_widget_code = """#ifndef WIDGET_H
+#define WIDGET_H
+
+#include <kernel/drivers/video/de_api.h>
+#include <stdint.h>
+
+typedef enum {
     WIDGET_LABEL,
     WIDGET_BUTTON
-};
+} WidgetType;
 
-class Widget {
-public:
+typedef struct {
     WidgetType type;
-    int x, y;
-    int width, height;
+    int x;
+    int y;
+    int width;
+    int height;
     uint32_t background_color;
     uint32_t color;
     int border_radius;
     char text[64];
+} Widget;
 
-    Widget(WidgetType t, int px, int py, int pw, int ph, uint32_t bg, uint32_t fg, int radius, const char* txt);
-    virtual ~Widget() {}
-
-    virtual void draw(DE_API* api);
-};
-
-class Label : public Widget {
-public:
-    Label(int px, int py, uint32_t fg, const char* txt);
-    void draw(DE_API* api) override;
-};
-
-class Button : public Widget {
-public:
-    Button(int px, int py, int pw, int ph, uint32_t bg, uint32_t fg, int radius, const char* txt);
-    void draw(DE_API* api) override;
-};
+Widget widget_make_label(int px, int py, uint32_t fg, const char* txt);
+Widget widget_make_button(int px, int py, int pw, int ph, uint32_t bg, uint32_t fg, int radius, const char* txt);
+void widget_draw(const Widget* w, DE_API* api);
 
 #endif
 """
-    with open(os.path.join(include_dir, "widget.hpp"), "w", encoding="utf-8") as f:
-        f.write(hpp_widget_code)
+    with open(os.path.join(include_dir, "widget.h"), "w", encoding="utf-8") as f:
+        f.write(h_widget_code)
 
-    # 11. src/lib/draw_text.cpp
-    cpp_draw_code = r"""#include "../../include/draw_text.hpp"
+    # 10. src/lib/draw_text.c
+    c_draw_code = r"""#include "draw_text.h"
 
 void draw_text_safe_internal(DE_API* api, int x, int y, const char* str, uint32_t color) {
     if (!api || !api->draw_text || !str) return;
@@ -394,16 +302,23 @@ void draw_text_safe_internal(DE_API* api, int x, int y, const char* str, uint32_
     api->draw_text(x, y, reversed, color);
 }
 """
-    with open(os.path.join(lib_dir, "draw_text.cpp"), "w", encoding="utf-8") as f:
-        f.write(cpp_draw_code)
+    with open(os.path.join(lib_dir, "draw_text.c"), "w", encoding="utf-8") as f:
+        f.write(c_draw_code)
 
-    # 12. src/lib/input.cpp
-    cpp_input_code = """#include "../../include/input.h"
+    # 11. src/lib/input.c
+    c_input_code = """#include "input.h"
 
-uint8_t Input::modifiers = MOD_NONE;
-bool Input::keys[256] = { false };
+static uint8_t g_modifiers = MOD_NONE;
+static bool g_keys[256] = { false };
 
-void Input::poll(DE_API* api) {
+void input_init(void) {
+    g_modifiers = MOD_NONE;
+    for (int i = 0; i < 256; i++) {
+        g_keys[i] = false;
+    }
+}
+
+void input_poll(DE_API* api) {
     if (!api || !api->get_key) return;
 
     for (int i = 0; i < 16; i++) {
@@ -417,44 +332,42 @@ void Input::poll(DE_API* api) {
         bool is_release = (code & 0x80) != 0;
         uint8_t key = code & 0x7F;
 
-        keys[key] = !is_release;
+        g_keys[key] = !is_release;
 
         if (key == KEY_LCTRL) {
-            if (is_release) modifiers &= ~MOD_CTRL;
-            else            modifiers |= MOD_CTRL;
-        }
-        else if (key == KEY_LSHIFT || key == KEY_RSHIFT) {
-            if (is_release) modifiers &= ~MOD_SHIFT;
-            else            modifiers |= MOD_SHIFT;
-        }
-        else if (key == KEY_LALT) {
-            if (is_release) modifiers &= ~MOD_ALT;
-            else            modifiers |= MOD_ALT;
-        }
-        else if (key == KEY_SUPER) {
-            if (is_release) modifiers &= ~MOD_SUPER;
-            else            modifiers |= MOD_SUPER;
+            if (is_release) g_modifiers &= ~MOD_CTRL;
+            else            g_modifiers |= MOD_CTRL;
+        } else if (key == KEY_LSHIFT || key == KEY_RSHIFT) {
+            if (is_release) g_modifiers &= ~MOD_SHIFT;
+            else            g_modifiers |= MOD_SHIFT;
+        } else if (key == KEY_LALT) {
+            if (is_release) g_modifiers &= ~MOD_ALT;
+            else            g_modifiers |= MOD_ALT;
+        } else if (key == KEY_SUPER) {
+            if (is_release) g_modifiers &= ~MOD_SUPER;
+            else            g_modifiers |= MOD_SUPER;
         }
     }
 }
 
-bool Input::is_key_down(uint8_t key) { return keys[key]; }
-bool Input::is_ctrl()                { return (modifiers & MOD_CTRL) != 0; }
-bool Input::is_shift()               { return (modifiers & MOD_SHIFT) != 0; }
-bool Input::is_alt()                 { return (modifiers & MOD_ALT) != 0; }
-bool Input::is_super()               { return (modifiers & MOD_SUPER) != 0; }
+bool input_is_key_down(uint8_t key) { return g_keys[key]; }
+bool input_is_ctrl(void)           { return (g_modifiers & MOD_CTRL) != 0; }
+bool input_is_shift(void)          { return (g_modifiers & MOD_SHIFT) != 0; }
+bool input_is_alt(void)            { return (g_modifiers & MOD_ALT) != 0; }
+bool input_is_super(void)          { return (g_modifiers & MOD_SUPER) != 0; }
 
-bool Input::is_combo(uint8_t modifier_flags, uint8_t key) {
-    return (modifiers == modifier_flags) && keys[key];
+bool input_is_combo(uint8_t modifier_flags, uint8_t key) {
+    return (g_modifiers == modifier_flags) && g_keys[key];
 }
 """
-    with open(os.path.join(lib_dir, "input.cpp"), "w", encoding="utf-8") as f:
-        f.write(cpp_input_code)
+    with open(os.path.join(lib_dir, "input.c"), "w", encoding="utf-8") as f:
+        f.write(c_input_code)
 
-    # 13. src/lib/cursor.cpp
-    cpp_cursor_code = """#include "../../include/cursor.h"
+    # 12. src/lib/cursor.c
+    c_cursor_code = """#include "cursor.h"
 
 void cursor_init(CursorState* state, const char* path, int w, int h, uint32_t bg_color) {
+    if (!state) return;
     state->path = path;
     state->width = w;
     state->height = h;
@@ -464,31 +377,36 @@ void cursor_init(CursorState* state, const char* path, int w, int h, uint32_t bg
 }
 
 void cursor_render(DE_API* api, CursorState* state) {
+    if (!api || !state || !api->get_mouse) return;
+
     de_mouse_state_t mouse;
     api->get_mouse(&mouse);
 
     if (mouse.x != state->old_x || mouse.y != state->old_y) {
-        if (state->old_x != -9999) {
+        if (state->old_x != -9999 && api->draw_rect && api->dmg_union_replace) {
             api->draw_rect(state->old_x, state->old_y, state->width, state->height, state->bg_color);
             api->dmg_union_replace(state->old_x, state->old_y, state->old_x + state->width, state->old_y + state->height);
         }
 
-        // 3 parametreli orijinal imza kullanıldı (w ve h parametreleri kaldırıldı)
-        api->render_kbi(mouse.x, mouse.y, state->path);
-        api->dmg_union_replace(mouse.x, mouse.y, mouse.x + state->width, mouse.y + state->height);
+        if (api->render_kbi) {
+            api->render_kbi(mouse.x, mouse.y, state->path);
+        }
+        if (api->dmg_union_replace) {
+            api->dmg_union_replace(mouse.x, mouse.y, mouse.x + state->width, mouse.y + state->height);
+        }
 
         state->old_x = mouse.x;
         state->old_y = mouse.y;
     }
 }
 """
-    with open(os.path.join(lib_dir, "cursor.cpp"), "w", encoding="utf-8") as f:
-        f.write(cpp_cursor_code)
+    with open(os.path.join(lib_dir, "cursor.c"), "w", encoding="utf-8") as f:
+        f.write(c_cursor_code)
 
-    # 14. src/lib/grid.cpp
-    cpp_grid_code = """#include <grid.hpp>
+    # 13. src/lib/grid.c
+    c_grid_code = """#include "grid.h"
 
-void draw_grid_lines(DE_API* api, uint32_t screen_width, uint32_t screen_height, int cell_size, uint32_t grid_color) {
+void draw_grid_lines(DE_API* api, int screen_width, int screen_height, int cell_size, uint32_t grid_color) {
     if (!api || !api->draw_rect || cell_size <= 0) return;
 
     for (int x = 0; x <= screen_width; x += cell_size) {
@@ -500,26 +418,163 @@ void draw_grid_lines(DE_API* api, uint32_t screen_width, uint32_t screen_height,
     }
 }
 """
-    with open(os.path.join(lib_dir, "grid.cpp"), "w", encoding="utf-8") as f:
-        f.write(cpp_grid_code)
+    with open(os.path.join(lib_dir, "grid.c"), "w", encoding="utf-8") as f:
+        f.write(c_grid_code)
 
-    # 15. src/main.cpp
+    # 14. src/lib/window.c
+    c_window_code = """#include "window.h"
+
+void window_init(Window* win, int wx, int wy, int ww, int wh, WindowTheme custom_theme) {
+    if (!win) return;
+    win->x = wx;
+    win->y = wy;
+    win->width = ww;
+    win->height = wh;
+    win->dragging = 0;
+    win->drag_offset_x = 0;
+    win->drag_offset_y = 0;
+    win->is_open = 1;
+    win->theme = custom_theme;
+}
+
+void window_update(Window* win, const de_mouse_state_t* mouse) {
+    if (!win || !mouse || !win->is_open) return;
+
+    if (mouse->left_button == 1) {
+        if (win->dragging == 0) {
+            if (mouse->x >= win->x && mouse->x <= (win->x + win->width) &&
+                mouse->y >= win->y && mouse->y <= (win->y + win->theme.header_height)) {
+                int close_x = win->x + win->width - win->theme.header_height;
+                if (mouse->x >= close_x && mouse->x <= (win->x + win->width)) {
+                    win->is_open = 0;
+                    return;
+                }
+
+                win->dragging = 1;
+                win->drag_offset_x = mouse->x - win->x;
+                win->drag_offset_y = mouse->y - win->y;
+            }
+        } else {
+            int new_x = mouse->x - win->drag_offset_x;
+            int new_y = mouse->y - win->drag_offset_y;
+
+            if (new_x < 0) new_x = 0;
+            if (new_y < 0) new_y = 0;
+            if (new_x > 1920 - win->width) new_x = 1920 - win->width;
+            if (new_y > 1080 - win->height) new_y = 1080 - win->height;
+
+            win->x = new_x;
+            win->y = new_y;
+        }
+    } else {
+        win->dragging = 0;
+    }
+}
+
+void window_draw(const Window* win, DE_API* api) {
+    if (!win || !win->is_open || !api || !api->draw_rect) return;
+
+    int t = win->theme.border_thickness;
+    api->draw_rect(win->x - t, win->y - t, win->width + (t * 2), win->height + (t * 2), win->theme.border_color);
+    api->draw_rect(win->x, win->y, win->width, win->height, win->theme.bg_color);
+
+    uint32_t current_header = (win->dragging == 1) ? win->theme.active_header_color : win->theme.header_color;
+    api->draw_rect(win->x, win->y, win->width, win->theme.header_height, current_header);
+
+    int btn_size = 14;
+    int btn_x = win->x + win->width - win->theme.header_height + (win->theme.header_height - btn_size) / 2;
+    int btn_y = win->y + (win->theme.header_height - btn_size) / 2;
+    api->draw_rect(btn_x, btn_y, btn_size, btn_size, 0x00E63946);
+}
+"""
+    with open(os.path.join(lib_dir, "window.c"), "w", encoding="utf-8") as f:
+        f.write(c_window_code)
+
+    # 15. src/lib/widget.c
+    c_widget_code = """#include "widget.h"
+
+Widget widget_make_label(int px, int py, uint32_t fg, const char* txt) {
+    Widget w;
+    w.type = WIDGET_LABEL;
+    w.x = px;
+    w.y = py;
+    w.width = 0;
+    w.height = 0;
+    w.background_color = 0;
+    w.color = fg;
+    w.border_radius = 0;
+
+    int i = 0;
+    while (txt && txt[i] != '\\0' && i < 63) {
+        w.text[i] = txt[i];
+        i++;
+    }
+    w.text[i] = '\\0';
+    return w;
+}
+
+Widget widget_make_button(int px, int py, int pw, int ph, uint32_t bg, uint32_t fg, int radius, const char* txt) {
+    Widget w;
+    w.type = WIDGET_BUTTON;
+    w.x = px;
+    w.y = py;
+    w.width = pw;
+    w.height = ph;
+    w.background_color = bg;
+    w.color = fg;
+    w.border_radius = radius;
+
+    int i = 0;
+    while (txt && txt[i] != '\\0' && i < 63) {
+        w.text[i] = txt[i];
+        i++;
+    }
+    w.text[i] = '\\0';
+    return w;
+}
+
+void widget_draw(const Widget* w, DE_API* api) {
+    if (!w || !api) return;
+
+    if (w->type == WIDGET_LABEL) {
+        if (api->draw_text) {
+            api->draw_text(w->x, w->y, w->text, w->color);
+        }
+    } else if (w->type == WIDGET_BUTTON) {
+        if (api->draw_rect) {
+            api->draw_rect(w->x, w->y, w->width, w->height, w->background_color);
+        }
+        if (api->draw_text) {
+            api->draw_text(w->x + 12, w->y + (w->height - 8) / 2, w->text, w->color);
+        }
+    }
+}
+"""
+    with open(os.path.join(lib_dir, "widget.c"), "w", encoding="utf-8") as f:
+        f.write(c_widget_code)
+
+    # 16. src/main.c
     main_code = r"""#include <kernel/drivers/video/de_api.h>
-#include <grid.hpp>
-#include <window.hpp>
-#include <widget.hpp>
+#include "grid.h"
+#include "window.h"
+#include "widget.h"
+#include <stdbool.h>
 
-extern "C" void app_main(DE_API* api) {
+void app_main(DE_API* api) {
     if (!api) return;
 
-    if (api->get_file_count && api->get_file_name_at && api->log) {
+    if (api->log) {
+        api->log("[DE] app_main basladi");
+    }
+
+    if (api->get_file_count && api->get_file_name_at) {
         const char* target_dir = "/usr/share/applications";
         int file_count = api->get_file_count(target_dir);
-        
+
         for (int i = 0; i < file_count; i++) {
             char filename[32];
-            if (api->get_file_name_at(target_dir, i, filename, sizeof(filename))) {
-                // Dosya işleme döngüsü
+            if (api->get_file_name_at(target_dir, i, filename, (int)sizeof(filename))) {
+                /* Dosya işleme döngüsü */
             }
         }
     }
@@ -536,14 +591,12 @@ extern "C" void app_main(DE_API* api) {
     uint32_t bg_color   = current_theme.bg_color;
     uint32_t grid_color = 0x003D405B;
     int cell_size       = 100;
-    bool show_grid = true;
-
-    // Window win(100, 100, 800, 500, current_theme);
-
-    // Label my_label(30, 40, 0x00E0E0E0, "Merhaba KuvixOS");
-    //Button my_button(30, 80, 160, 45, 0x003D405B, 0x00FFFFFF, 4, "Tikla");
+    bool show_grid      = true;
 
     de_mouse_state_t mouse = {0, 0, 0, 0, 0};
+
+    int w = api->screen_width > 0 ? api->screen_width : 1920;
+    int h = api->screen_height > 0 ? api->screen_height : 1080;
 
     if (api->clear_screen) {
         api->clear_screen(bg_color);
@@ -559,33 +612,20 @@ extern "C" void app_main(DE_API* api) {
 
         if (api->get_mouse) {
             api->get_mouse(&mouse);
-            // win.update(mouse);
         }
 
         if (api->get_key) {
             char k = api->get_key();
-            if (k == 27) break; // ESC ile çıkış
-            
+            if (k == 27) break;
+
             if (k == 'g' || k == 'G') {
                 show_grid = !show_grid;
             }
         }
 
         if (show_grid) {
-            draw_grid_lines(api, 1920, 1080, cell_size, grid_color);
+            draw_grid_lines(api, w, h, cell_size, grid_color);
         }
-
-        //if (win.is_open) {
-        //    win.draw(api);
-        //
-        //    my_label.x = win.x + 30;
-        //    my_label.y = win.y + 40;
-        //    my_label.draw(api);
-        //
-        //    my_button.x = win.x + 30;
-        //    my_button.y = win.y + 80;
-        //    my_button.draw(api);
-        //}
 
         if (api->render_kbi) {
             api->render_kbi(mouse.x, mouse.y, "/sys/themes/arrow-cursor.kbi");
@@ -597,47 +637,10 @@ extern "C" void app_main(DE_API* api) {
     }
 }
 """
-    with open(os.path.join(src_dir, "main.cpp"), "w", encoding="utf-8") as f:
+    with open(os.path.join(src_dir, "main.c"), "w", encoding="utf-8") as f:
         f.write(main_code)
 
-    # 16. src/lib/widget.cpp
-    cpp_widget_code = """#include <widget.hpp>
-
-Widget::Widget(WidgetType t, int px, int py, int pw, int ph, uint32_t bg, uint32_t fg, int radius, const char* txt)
-    : type(t), x(px), y(py), width(pw), height(ph), background_color(bg), color(fg), border_radius(radius) {
-    int i = 0;
-    while (txt[i] != '\\0' && i < 63) {
-        text[i] = txt[i];
-        i++;
-    }
-    text[i] = '\\0';
-}
-
-void Widget::draw(DE_API*) {}
-
-Label::Label(int px, int py, uint32_t fg, const char* txt)
-    : Widget(WIDGET_LABEL, px, py, 0, 0, 0, fg, 0, txt) {}
-
-void Label::draw(DE_API* api) {
-    if (!api || !api->draw_text) return;
-    api->draw_text(x, y, text, color);
-}
-
-Button::Button(int px, int py, int pw, int ph, uint32_t bg, uint32_t fg, int radius, const char* txt)
-    : Widget(WIDGET_BUTTON, px, py, pw, ph, bg, fg, radius, txt) {}
-
-void Button::draw(DE_API* api) {
-    if (!api || !api->draw_rect) return;
-    api->draw_rect(x, y, width, height, background_color);
-    if (api->draw_text) {
-        api->draw_text(x + 12, y + (height - 8) / 2, text, color);
-    }
-}
-"""
-    with open(os.path.join(lib_dir, "widget.cpp"), "w", encoding="utf-8") as f:
-        f.write(cpp_widget_code)
-
-    # kvx.json Manifest
+    # 17. kvx.json Manifest
     kvx_json_data = {
         "name": name,
         "type": "de",
@@ -650,5 +653,5 @@ void Button::draw(DE_API* api) {
     with open(os.path.join(target_dir, "kvx.json"), "w", encoding="utf-8") as f:
         json.dump(kvx_json_data, f, indent=4, ensure_ascii=False)
 
-    print(f"Başarılı: '{name}' DE projesi SDK ve UI bileşenleriyle oluşturuldu.")
+    print(f"Başarılı: '{name}' DE projesi (C) oluşturuldu.")
     return True
