@@ -4,18 +4,35 @@ import subprocess
 import tempfile
 
 
-def resolve_project_name(target_dir, fallback_name):
+def _load_kvx_json(target_dir):
     kvx_json_path = os.path.join(target_dir, "kvx.json")
-    if os.path.isfile(kvx_json_path):
-        try:
-            with open(kvx_json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            json_name = data.get("name")
-            if isinstance(json_name, str) and json_name.strip():
-                return json_name.strip()
-        except Exception as e:
-            print(f"Uyarı: kvx.json okunamadı ({e}), verilen isim kullanılacak.")
+    if not os.path.isfile(kvx_json_path):
+        return None
+    try:
+        with open(kvx_json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except Exception as e:
+        print(f"Uyarı: kvx.json okunamadı ({e}).")
+        return None
+
+
+def resolve_project_name(target_dir, fallback_name):
+    data = _load_kvx_json(target_dir)
+    if data:
+        json_name = data.get("name")
+        if isinstance(json_name, str) and json_name.strip():
+            return json_name.strip()
     return fallback_name.strip()
+
+
+def resolve_output_name(target_dir, resolved_name):
+    data = _load_kvx_json(target_dir)
+    if data:
+        json_output = data.get("output_file")
+        if isinstance(json_output, str) and json_output.strip():
+            return json_output.strip()
+    return resolved_name
 
 
 def build_de_project(project_path, name, target_arch="i686", custom_cflags="", custom_ldflags="", run_make=True):
@@ -26,9 +43,10 @@ def build_de_project(project_path, name, target_arch="i686", custom_cflags="", c
         return False
 
     resolved_name = resolve_project_name(target_dir, name)
+    output_name = resolve_output_name(target_dir, resolved_name)
     ldflags = custom_ldflags if custom_ldflags else "-m elf_i386 -T linker.ld --gc-sections -e _start -s"
 
-    makefile_content = f"""TARGET = {resolved_name}.kde
+    makefile_content = f"""TARGET = {output_name}
 KUVIX_SDK_INC = $(HOME)/.kuvix/sdk/include
 AS = i686-elf-as
 CC = i686-elf-gcc
@@ -51,6 +69,7 @@ OBJS = $(ENTRY_OBJ) $(filter-out $(ENTRY_OBJ), $(C_OBJS))
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
+\t@mkdir -p $(dir $(TARGET))
 \t$(LD) $(LDFLAGS) $(OBJS) -o $(TARGET)
 
 build/runtime/entry.o: src/runtime/entry.s
@@ -75,12 +94,12 @@ clean:
         print(f"Başarılı: '{resolved_name}' için geçici Makefile '/tmp' dizininde oluşturuldu ({makefile_path}).")
 
         if run_make:
-            print(f"Derleme başlatılıyor ({resolved_name})...")
+            print(f"Derleme başlatılıyor ({resolved_name} -> {output_name})...")
             result = subprocess.run(["make", "-f", makefile_path], cwd=target_dir)
             if result.returncode != 0:
                 print("Hata: Derleme başarısız oldu!")
                 return False
-            print(f"Başarılı: '{resolved_name}.kde' başarıyla derlendi.")
+            print(f"Başarılı: '{output_name}' başarıyla derlendi.")
 
         return True
     finally:

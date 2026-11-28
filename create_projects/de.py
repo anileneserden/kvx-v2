@@ -2,7 +2,7 @@ import os
 import json
 
 
-def create_new_project(path, name, version, author):
+def create_new_project(path, name, version, author, output_file=None):
     target_dir = os.path.abspath(os.path.join(path, name))
 
     if os.path.exists(target_dir):
@@ -640,9 +640,16 @@ void app_main(DE_API* api) {
     with open(os.path.join(src_dir, "main.c"), "w", encoding="utf-8") as f:
         f.write(main_code)
 
+    resolved_output = (
+        output_file.strip()
+        if isinstance(output_file, str) and output_file.strip()
+        else name.strip().lower()
+    )
+
     # 17. kvx.json Manifest
     kvx_json_data = {
         "name": name,
+        "output_file": resolved_output,
         "type": "de",
         "sub_type": "kernel",
         "version": version,
