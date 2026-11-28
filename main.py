@@ -19,7 +19,7 @@ from build_projects.driver import build_driver_project
 from build_projects.command import build_command_project
 
 # Sürüm Bilgisi
-VERSION = "0.2.2"
+VERSION = "0.2.6"
 
 GREEN = "\033[92m"
 BOLD = "\033[1m"
@@ -36,6 +36,18 @@ DEFAULT_CONFIG = {
     "sdk_path": os.path.expanduser("~/.kuvix/sdk")
 }
 
+
+def ensure_config_dir():
+    if not os.path.exists(CONFIG_DIR):
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+
+
+def save_config(config_data):
+    ensure_config_dir()
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config_data, f, indent=4, ensure_ascii=False)
+
+
 def load_config():
     if not os.path.exists(CONFIG_PATH):
         ensure_config_dir()
@@ -44,7 +56,8 @@ def load_config():
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
-            # Varsayılan değerlerle eksik anahtarları tamamla
+            if not isinstance(data, dict):
+                return DEFAULT_CONFIG.copy()
             for k, v in DEFAULT_CONFIG.items():
                 if k not in data:
                     data[k] = v
@@ -52,14 +65,6 @@ def load_config():
     except Exception:
         return DEFAULT_CONFIG.copy()
 
-def save_config(config_data):
-    ensure_config_dir()
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config_data, f, indent=4, ensure_ascii=False)
-
-def ensure_config_dir():
-    if not os.path.exists(CONFIG_DIR):
-        os.makedirs(CONFIG_DIR, exist_ok=True)
 
 def print_banner():
     banner = f"""{CYAN}
@@ -71,6 +76,7 @@ def print_banner():
 {RESET}KuvixOS SDK & Build Management Tool
 """
     print(banner)
+
 
 def interactive_menu(title, options):
     current_idx = 0
@@ -105,10 +111,10 @@ def interactive_menu(title, options):
         print("\n")
     return options[current_idx]
 
-def run_create_flow(target_name=None):
+
+def run_create_flow(target_name=None, sdk_path=None):
     print_banner()
 
-    # 'command' türünü listeye ekliyoruz
     project_types = ["app-cli", "app-gui", "de", "login-screen", "driver", "command"]
     selected_type = interactive_menu("Proje Türünü Seçin:", project_types)
 
@@ -138,13 +144,17 @@ def run_create_flow(target_name=None):
     elif p_type == "login-screen":
         create_login_screen_project(".", name, version, author)
     elif p_type == "driver":
-        create_driver_project(".", name, version, author)
-    elif p_type == "command": # Command projesi tetikleyicisi
+        create_driver_project(".", name, version, author, sdk_path=sdk_path)
+    elif p_type == "command":
         create_command_project(".", name, version, author)
     else:
         print(f"{RED}Hata: '{p_type}' tipi için henüz proje şablonu tanımlanmadı!{RESET}")
 
+
 def main():
+    cfg = load_config()
+    sdk_path = cfg.get("sdk_path", DEFAULT_CONFIG["sdk_path"])
+
     parser = argparse.ArgumentParser(description="KuvixOS V2 Geliştirme Aracı")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -157,8 +167,7 @@ def main():
     build_parser.add_argument("dir", nargs="?", default=".", help="Proje dizini")
     build_parser.add_argument("-c", "--clean", action="store_true", help="Derlemeden önce eski çıktıları temizler")
 
-    # Settings komutu
-    settings_parser = subparsers.add_parser("settings", help="SDK and araç ayarlarını yapılandırır")
+    settings_parser = subparsers.add_parser("settings", help="SDK ve araç ayarlarını yapılandırır")
     settings_parser.add_argument("--default-editor", choices=["vscode", "code", "none"], help="Varsayılan kod editörünü ayarlar")
     settings_parser.add_argument("--sdk-path", help="KuvixOS SDK dizin yolunu ayarlar")
 
@@ -167,34 +176,42 @@ def main():
     args = parser.parse_args()
 
     if args.command in ["init", "create"]:
-        run_create_flow(args.name if args.command == "create" else None)
-    
+        run_create_flow(args.name if args.command == "create" else None, sdk_path=sdk_path)
+
     elif args.command == "build":
         target_dir = args.dir
         config_path = os.path.join(target_dir, "kvx.json")
-        
+
         p_type = "de"
+        output_file = None
         if os.path.exists(config_path):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     config_data = json.load(f)
-                    p_type = config_data.get("type", "de")
+                    if isinstance(config_data, dict):
+                        p_type = config_data.get("type", "de")
+                        if isinstance(config_data.get("output_file"), str) and config_data["output_file"].strip():
+                            output_file = config_data["output_file"].strip()
             except Exception:
                 pass
 
         project_name = os.path.basename(os.path.abspath(target_dir))
-        
+
         if args.clean:
             print(f"{GREEN}Temizleniyor: {project_name}...{RESET}")
             build_dir = os.path.join(target_dir, "build")
             if os.path.exists(build_dir):
                 shutil.rmtree(build_dir)
-            
-            # Eski Makefile kalıntısını her koşulda temizle
+
             makefile_path = os.path.join(target_dir, "Makefile")
             if os.path.exists(makefile_path):
                 os.remove(makefile_path)
-            
+
+            if output_file:
+                out_path = output_file if os.path.isabs(output_file) else os.path.join(target_dir, output_file)
+                if os.path.exists(out_path):
+                    os.remove(out_path)
+
             if p_type == "de":
                 kde_file = os.path.join(target_dir, f"{project_name}.kde")
                 if os.path.exists(kde_file):
@@ -203,7 +220,7 @@ def main():
                 kef_file = os.path.join(target_dir, f"{project_name}.kef")
                 if os.path.exists(kef_file):
                     os.remove(kef_file)
-            elif p_type == "login_screen":
+            elif p_type == "login-screen":
                 kls_file = os.path.join(target_dir, f"{project_name}.kls")
                 if os.path.exists(kls_file):
                     os.remove(kls_file)
@@ -221,17 +238,16 @@ def main():
             build_de_project(target_dir, project_name)
         elif p_type == "app-gui":
             build_app_gui_project(target_dir, project_name)
-        elif p_type == "login_screen":
+        elif p_type == "login-screen":
             build_login_screen_project(target_dir, project_name)
         elif p_type == "driver":
-            build_driver_project(target_dir, project_name)
+            build_driver_project(target_dir, project_name, sdk_path=sdk_path)
         elif p_type == "command":
             build_command_project(target_dir, project_name)
         else:
             print(f"{RED}Hata: '{p_type}' tipindeki projeler için derleyici bulunamadı!{RESET}")
 
     elif args.command == "settings":
-        cfg = load_config()
         updated = False
 
         if args.default_editor:
@@ -254,12 +270,12 @@ def main():
             print(f"  • SDK Yolu        : {cfg.get('sdk_path')}")
 
     elif args.command == "info":
-        cfg = load_config()
         print_banner()
         print(f"{BOLD}KuvixOS Geliştirme Ortamı{RESET}")
         print(f"Versiyon         : {VERSION}")
         print(f"SDK Yolu         : {cfg.get('sdk_path')}")
         print(f"Varsayılan Editör: {cfg.get('default_editor')}")
+
 
 if __name__ == "__main__":
     main()

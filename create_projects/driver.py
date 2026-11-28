@@ -1,7 +1,8 @@
 import os
 import json
 
-def create_new_project(path, name, version, author):
+
+def create_new_project(path, name, version, author, output_file=None):
     target_dir = os.path.abspath(os.path.join(path, name))
 
     if os.path.exists(target_dir):
@@ -9,9 +10,12 @@ def create_new_project(path, name, version, author):
         return False
 
     src_dir = os.path.join(target_dir, "src")
+    class_dir = os.path.join(src_dir, "class")
+    include_dir = os.path.join(target_dir, "include")
     vscode_dir = os.path.join(target_dir, ".vscode")
 
-    os.makedirs(src_dir, exist_ok=True)
+    os.makedirs(class_dir, exist_ok=True)
+    os.makedirs(include_dir, exist_ok=True)
     os.makedirs(vscode_dir, exist_ok=True)
 
     # 1. .vscode/c_cpp_properties.json
@@ -28,6 +32,8 @@ def create_new_project(path, name, version, author):
         except Exception:
             pass
 
+    default_sdk_include = os.path.join(os.path.expanduser(sdk_path), "include")
+
     if editor_mode in ["vscode", "code"]:
         c_cpp_properties_content = {
             "configurations": [
@@ -35,7 +41,8 @@ def create_new_project(path, name, version, author):
                     "name": "KuvixOS-Driver",
                     "includePath": [
                         "${workspaceFolder}/**",
-                        f"{sdk_path}/include/**"
+                        "${workspaceFolder}/include/**",
+                        f"{default_sdk_include}/**"
                     ],
                     "defines": [],
                     "compilerPath": "/usr/bin/i686-elf-gcc",
@@ -130,13 +137,24 @@ void driver_exit(void) {
     with open(os.path.join(src_dir, "main.c"), "w", encoding="utf-8") as f:
         f.write(main_c_code)
 
+    resolved_output = (
+        output_file.strip()
+        if isinstance(output_file, str) and output_file.strip()
+        else name.strip().lower()
+    )
+
     # 4. kvx.json Manifest
     kvx_json_data = {
         "name": name,
+        "output_file": resolved_output,
         "type": "driver",
         "sub_type": "kdf",
         "version": version,
         "author": author,
+        "includeDirs": [
+            "include",
+            default_sdk_include
+        ],
         "compiler_flags": "-O2 -Wall -Wextra -m32 -ffreestanding -fno-pie -nostdlib",
         "linker_flags": "-m elf_i386 -nostdlib -T linker.ld"
     }
